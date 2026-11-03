@@ -3,9 +3,25 @@ const LS = {
   get(k, d) { try { return JSON.parse(localStorage.getItem("apstat_" + k)) ?? d; } catch { return d; } },
   set(k, v) { localStorage.setItem("apstat_" + k, JSON.stringify(v)); }
 };
-// state: {mc: {qid: {pick, correct, ts}}, frDone: {qid:true}}
-let progress = LS.get("progress", { mc: {}, frDone: {} });
+// state: {mc: {qid: {pick, correct, ts}}, frDone: {qid:true}, learned: {ch:true}}
+let progress = LS.get("progress", { mc: {}, frDone: {}, learned: {} });
 const saveProgress = () => LS.set("progress", progress);
+
+// 知识点章节 → 刷题小节（学完一章立即刷对应题）
+const CH_TOPICS = {
+  1: ["单变量数据分析", "双变量数据分析"],
+  2: ["正态概率"],
+  3: ["双变量数据分析"],
+  4: ["抽样方法", "抽样偏差", "实验与观察研究"],
+  5: ["基本概率规则"],
+  6: ["随机变量", "二项与几何分布"],
+  7: ["抽样分布"],
+  8: ["比例的置信区间", "均值的置信区间", "确定样本量"],
+  9: ["显著性检验逻辑", "比例的假设检验", "模拟中的P值"],
+  10: ["均值的假设检验", "第一/二类错误与功效"],
+  11: ["卡方检验"],
+  12: ["斜率的假设检验", "斜率的置信区间"],
+};
 
 const app = document.getElementById("app");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -25,7 +41,11 @@ function viewHome() {
     <div class="card stat"><b>${done ? Math.round(correct / done * 100) : 0}%</b>正确率（${correct} 对）</div>
     <div class="card stat"><b>${wrongIds.length}</b>错题待复习 · <a href="#" onclick="go('wrong');return false">去复习</a></div>
   </div>
-  <h1 style="font-size:16px">按知识点刷题</h1><p class="sub">点击任意小节开始，做题顺序为顺序出题。</p>`;
+  <div class="card" style="background:#eff6ff;border-color:#bfdbfe">
+    <b style="color:var(--blue)">💡 推荐学习动线</b><br>
+    <span style="font-size:14px">到 <a href="#" onclick="go('knowledge');return false">知识点</a> 学一章 → 点章内「学完就刷题」立即练习 → 刷完看战绩，继续下一章。已学 ${Object.keys(progress.learned).length} / ${KNOWLEDGE.length} 章。</span>
+  </div>
+  <h1 style="font-size:16px;margin-top:16px">按知识点刷题</h1><p class="sub">也可以直接按小节刷题（已做对的排到队尾）。</p>`;
   for (const [ch, topics] of Object.entries(chapters)) {
     html += `<div class="card"><b>${esc(ch)}</b><div style="margin-top:8px">`;
     [...topics].forEach(t => {
@@ -42,12 +62,17 @@ function viewHome() {
 
 /* ---------- 选择题练习 ---------- */
 let session = null;
-function startPractice(topic, ids) {
+function startPractice(topic, ids, fromCh) {
   let pool = ids ?? MC_QUESTIONS.filter(q => q.topic === topic).map(q => q.id);
   // 已做对的排后面（先做未做和错题）
   pool.sort((a, b) => (progress.mc[a]?.correct ? 1 : 0) - (progress.mc[b]?.correct ? 1 : 0));
-  session = { ids: pool, i: 0 };
+  session = { ids: pool, i: 0, pick: undefined, topic, done: 0, correct: 0, fromCh: fromCh ?? null };
   go("practice");
+}
+function startFromChapter(ch, topic) {
+  progress.learned[ch] = true;
+  saveProgress();
+  startPractice(topic, null, ch);
 }
 function renderPractice() {
   if (!session) { app.innerHTML = `<h1>选择题</h1><p class="sub">请从首页或错题本选择一个知识点开始。</p>` + '<button class="btn primary" onclick="go(\'home\')">返回首页</button>'; return; }
@@ -88,6 +113,7 @@ function pick(L) {
   if (session.pick !== undefined) return;
   const q = MC_QUESTIONS.find(x => x.id === session.ids[session.i]);
   session.pick = L;
+  session.done++; if (L === q.answer) session.correct++;
   progress.mc[q.id] = { pick: L, correct: L === q.answer, ts: Date.now() };
   saveProgress();
   // 原地更新，不重建容器（避免点击中的节点被移除）
@@ -111,7 +137,27 @@ function pick(L) {
 function nextQ() {
   session.pick = undefined;
   if (session.i + 1 < session.ids.length) { session.i++; renderPractice(); }
-  else { const t = MC_QUESTIONS.find(x => x.id === session.ids[0]).topic; session = null; go("home"); }
+  else renderSessionSummary();
+}
+function renderSessionSummary() {
+  const s = session;
+  const wrong = s.done - s.correct;
+  const ch = s.fromCh;
+  const nextCh = ch && KNOWLEDGE.some(k => k.ch === ch + 1) ? ch + 1 : null;
+  let html = `<h1>本节完成 🎉</h1>
+  <p class="sub">${s.topic ? esc(s.topic) : ""} · 共 ${s.ids.length} 题</p>
+  <div class="grid" style="margin-bottom:18px">
+    <div class="card stat"><b>${s.done}</b>本次做题</div>
+    <div class="card stat"><b>${s.done ? Math.round(s.correct / s.done * 100) : 0}%</b>正确率（${s.correct} 对）</div>
+    <div class="card stat"><b>${wrong}</b>错题已收入错题本</div>
+  </div>
+  <div class="qnav">
+    <button class="btn" onclick="go('wrong')">看错题解析</button>
+    ${nextCh ? `<button class="btn primary" onclick="go('knowledge',${nextCh})">继续学下一章 →</button>` : `<button class="btn primary" onclick="go('knowledge')">回知识点</button>`}
+    <button class="btn" onclick="go('home')">回首页</button>
+  </div>`;
+  session = null;
+  app.innerHTML = html;
 }
 function prevQ() { if (session.i > 0) { session.i--; session.pick = progress.mc[session.ids[session.i]]?.pick; renderPractice(); } }
 
@@ -159,21 +205,35 @@ function viewWrong() {
 }
 
 /* ---------- 知识点 ---------- */
-async function viewKnowledge() {
-  let html = `<h1>知识点</h1><p class="sub">按章节浏览课件整理的中文知识点（含常错点）。</p>`;
+function viewKnowledge(openCh) {
+  const learnedN = Object.keys(progress.learned).length;
+  let html = `<h1>知识点 · 学习动线</h1>
+  <p class="sub">按顺序学：打开一章读完 → 点「学完就刷题」立即练习对应题目 → 刷完继续下一章。已学 ${learnedN} / ${KNOWLEDGE.length} 章。</p>`;
   for (const k of KNOWLEDGE) {
-    html += `<details class="card"><summary style="cursor:pointer;font-weight:600;font-size:15px">${esc(k.title)}</summary>
-      <div class="kd" style="margin-top:10px">${k.html}</div></details>`;
+    const topics = CH_TOPICS[k.ch] || [];
+    const isLearned = progress.learned[k.ch];
+    html += `<details class="card" data-ch="${k.ch}" ${openCh === k.ch ? "open" : ""}>
+      <summary style="cursor:pointer;font-weight:600;font-size:15px">${isLearned ? '<span class="badge-done">✓ 已学</span> ' : ""}${esc(k.title)}</summary>
+      <div class="kd" style="margin-top:10px">${k.html}</div>
+      ${topics.length ? `<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <b style="font-size:14px">${isLearned ? "复习刷题" : "学完了？去刷题"}</b>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          ${topics.map(t => {
+            const ids = MC_QUESTIONS.filter(q => q.topic === t);
+            const d = ids.filter(q => progress.mc[q.id]).length;
+            return `<button class="btn primary" style="font-size:13px" onclick="startFromChapter(${k.ch},'${esc(t)}')">刷「${esc(t)}」(${d}/${ids.length})</button>`;
+          }).join("")}
+        </div></div>` : ""}
+    </details>`;
   }
   app.innerHTML = html;
 }
 
 /* ---------- 路由 ---------- */
-function go(view) {
+function go(view, arg) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
-  document.querySelector('button[data-view="practice"]').classList.toggle("active", view === "practice");
   if (view === "practice") renderPractice();
-  else { session?.frOpen; ({ home: viewHome, fr: viewFR, wrong: viewWrong, knowledge: viewKnowledge })[view](); }
+  else ({ home: viewHome, fr: viewFR, wrong: viewWrong, knowledge: viewKnowledge })[view](arg);
   window.scrollTo(0, 0);
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => go(t.dataset.view));
