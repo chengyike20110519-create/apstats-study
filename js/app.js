@@ -23,6 +23,35 @@ const CH_TOPICS = {
   12: ["斜率的假设检验", "斜率的置信区间"],
 };
 
+// 班内课程进度（2026-11 半期）：done=已讲 partial=部分讲 todo=未讲
+const TOPIC_CLASS = {
+  "单变量数据分析": "done", "双变量数据分析": "done",
+  "抽样方法": "done", "抽样偏差": "done", "实验与观察研究": "done",
+  "基本概率规则": "done", "二项与几何分布": "partial", "随机变量": "done",
+  "正态概率": "done", "抽样分布": "done",
+  "比例的置信区间": "done", "均值的置信区间": "done",
+  "确定样本量": "todo", "斜率的置信区间": "todo",
+  "显著性检验逻辑": "todo", "比例的假设检验": "todo", "均值的假设检验": "todo",
+  "第一/二类错误与功效": "todo", "模拟中的P值": "todo",
+  "卡方检验": "todo", "斜率的假设检验": "todo",
+};
+const CLASS_LABEL = { done: "✓ 已讲", partial: "🔶 部分讲", todo: "未讲·下半期" };
+const CLASS_CHIP = { done: "chip", partial: "chip", todo: "chip" };
+
+// 半期提纲（依据 2026-11-10 总复习课）
+const MIDTERM_OUTLINE = `
+<p style="font-size:14px"><b>主线</b>：数据收集 → 整理 → 分析 → 解释 → 下结论。期末是综合考试，学过的都会考。</p>
+<table>
+<tr><th style="width:16%">板块</th><th style="width:12%">班内进度</th><th>考点明细</th><th style="width:22%">网站刷题</th></tr>
+<tr><td>① 数据收集<br>（Ch4）</td><td>✓ 已讲</td><td><b>抽样</b>：概率抽样（简单随机/系统/分层/整群）vs 非概率抽样（方便/判断/自愿，补充配额/滚雪球）；<b>6 种偏差</b>：undercoverage、nonresponse、response、wording、voluntary、selection；<b>实验</b>：与观测的区别（treatment）、设计 5 细节（随机/区组/可复制/控制组/安慰剂）、3 方案（完全随机/随机区组/配对·自配对）、单盲双盲属实施细节</td><td>抽样方法 / 抽样偏差 / 实验与观察研究</td></tr>
+<tr><td>② 数据整理<br>（Ch1–3）</td><td>✓ 已讲</td><td><b>单变量</b>四维（center/spread/shape/outlier）+ 四图（点图/茎叶图/直方图/箱线图）；<b>双变量</b>散点图描述（强弱/正负/线性/异常值）、相关系数 r、回归方程 ŷ=b₀+b₁x、<b>b₁ = r·(s_y/s_x)</b></td><td>单变量 / 双变量数据分析</td></tr>
+<tr><td>③ 概率<br>（Ch5–6）</td><td>✓ 已讲<br>🔶 几何没讲</td><td>五个计算：交集/并集/独立/互斥/条件概率；离散型：随机变量特征 + <b>二项分布</b>（几何分布未讲）；连续型：<b>正态分布</b>（计算已学完）</td><td>基本概率规则 / 随机变量 / 二项与几何分布 / 正态概率</td></tr>
+<tr><td>④ 抽样分布<br>（Ch7）</td><td>✓ 已讲</td><td>样本均值/比例的分布、中心极限定理</td><td>抽样分布</td></tr>
+<tr><td>⑤ 置信区间<br>（Ch8）</td><td>🔶 部分</td><td>比例 CI ✓、均值 CI ✓；斜率 CI、确定样本量未讲</td><td>比例的置信区间 / 均值的置信区间</td></tr>
+<tr><td>⑥ 下半期</td><td>✗ 未讲</td><td>假设检验全套（逻辑/比例/均值/P值/两类错误与功效）、两总体比较、卡方、回归推断</td><td>对应小节标「未讲」</td></tr>
+</table>
+<p style="font-size:13px;color:var(--muted)">依据：2026-11-10 总复习课转写 + AI 总结；几何分布/置信区间范围已与你确认。</p>`;
+
 const app = document.getElementById("app");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -33,8 +62,18 @@ function viewHome() {
   const wrongIds = Object.entries(progress.mc).filter(([, r]) => !r.correct).map(([id]) => +id);
   const chapters = {};
   MC_QUESTIONS.forEach(q => { (chapters[q.chapter] ??= new Set()).add(q.topic); });
+  const classIds = MC_QUESTIONS.filter(q => TOPIC_CLASS[q.topic] !== "todo").map(q => q.id);
+  const nDone = Object.values(TOPIC_CLASS).filter(s => s === "done").length;
+  const nPartial = Object.values(TOPIC_CLASS).filter(s => s === "partial").length;
+  const nTodo = Object.values(TOPIC_CLASS).filter(s => s === "todo").length;
   let html = `<h1>AP 统计学 · 自学刷题</h1>
   <p class="sub">练习册全部 ${MC_QUESTIONS.length} 道选择题 + ${FR_QUESTIONS.length} 道简答题，按知识点分类，附中文解析。</p>
+  <div class="card" style="background:#fffbeb;border-color:#fde68a">
+    <b style="color:#b45309">📅 半期进度（班内）</b> ·
+    <span style="font-size:14px">已讲 ${nDone} 节 · 部分讲 ${nPartial} 节 · 未讲 ${nTodo} 节　</span>
+    <button class="btn small primary" onclick="startPractice(null,${JSON.stringify(classIds)})">刷「班内已讲范围」(${classIds.length} 题)</button>
+    <button class="btn small" onclick="showOutline()">看半期提纲</button>
+  </div>
   <div class="pbar"><div style="width:${(done / MC_QUESTIONS.length * 100).toFixed(1)}%"></div></div>
   <div class="grid" style="margin-bottom:18px">
     <div class="card stat"><b>${done} / ${MC_QUESTIONS.length}</b>已做题数</div>
@@ -51,8 +90,10 @@ function viewHome() {
     [...topics].forEach(t => {
       const ids = MC_QUESTIONS.filter(q => q.topic === t);
       const d = ids.filter(q => progress.mc[q.id]).length;
+      const cls = TOPIC_CLASS[t] || "todo";
+      const chipStyle = cls === "done" ? "background:#f0fdf4;color:#16a34a" : cls === "partial" ? "background:#fffbeb;color:#b45309" : "background:#f3f4f6;color:#9ca3af";
       html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
-        <span style="font-size:14px">${esc(t)} <span class="stat">（${d}/${ids.length}）</span></span>
+        <span style="font-size:14px">${esc(t)} <span class="stat">（${d}/${ids.length}）</span> <span class="chip" style="${chipStyle}">${CLASS_LABEL[cls]}</span></span>
         <button class="btn small" onclick="startPractice('${esc(t)}')">开始</button></div>`;
     });
     html += `</div></div>`;
@@ -205,15 +246,27 @@ function viewWrong() {
 }
 
 /* ---------- 知识点 ---------- */
+function chClass(ch) {
+  const sts = (CH_TOPICS[ch] || []).map(t => TOPIC_CLASS[t] || "todo");
+  if (sts.length && sts.every(s => s === "done")) return "done";
+  if (sts.some(s => s !== "todo")) return "partial";
+  return "todo";
+}
 function viewKnowledge(openCh) {
   const learnedN = Object.keys(progress.learned).length;
-  let html = `<h1>知识点 · 学习动线</h1>
-  <p class="sub">按顺序学：打开一章读完 → 点「学完就刷题」立即练习对应题目 → 刷完继续下一章。已学 ${learnedN} / ${KNOWLEDGE.length} 章。</p>`;
+  let html = `<div class="card" style="background:#fffbeb;border-color:#fde68a">
+    <b style="color:#b45309">📅 半期提纲（班内讲到哪了）</b> · <span style="font-size:13px">依据 2026-11-10 总复习课</span>
+    <button class="btn small" style="float:right" onclick="showOutline()">展开提纲</button>
+  </div>
+  <h1>知识点 · 学习动线</h1>
+  <p class="sub">按顺序学：打开一章读完 → 点「学完就刷题」立即练习对应题目 → 刷完继续下一章。已学 ${learnedN} / ${KNOWLEDGE.length} 章。<span class="chip" style="background:#f0fdf4;color:#16a34a">✓ 班内已讲</span> <span class="chip" style="background:#fffbeb;color:#b45309">🔶 部分</span> <span class="chip" style="background:#f3f4f6;color:#9ca3af">未讲·下半期</span></p>`;
   for (const k of KNOWLEDGE) {
     const topics = CH_TOPICS[k.ch] || [];
     const isLearned = progress.learned[k.ch];
+    const cls = chClass(k.ch);
+    const chipStyle = cls === "done" ? "background:#f0fdf4;color:#16a34a" : cls === "partial" ? "background:#fffbeb;color:#b45309" : "background:#f3f4f6;color:#9ca3af";
     html += `<details class="card" data-ch="${k.ch}" ${openCh === k.ch ? "open" : ""}>
-      <summary style="cursor:pointer;font-weight:600;font-size:15px">${isLearned ? '<span class="badge-done">✓ 已学</span> ' : ""}${esc(k.title)}</summary>
+      <summary style="cursor:pointer;font-weight:600;font-size:15px">${isLearned ? '<span class="badge-done">✓ 已学</span> ' : ""}${esc(k.title)} <span class="chip" style="${chipStyle}">${CLASS_LABEL[cls]}</span></summary>
       <div class="kd" style="margin-top:10px">${k.html}</div>
       ${topics.length ? `<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
         <b style="font-size:14px">${isLearned ? "复习刷题" : "学完了？去刷题"}</b>
@@ -227,6 +280,12 @@ function viewKnowledge(openCh) {
     </details>`;
   }
   app.innerHTML = html;
+}
+function showOutline() {
+  app.innerHTML = `<h1>半期提纲 · 班内进度</h1>
+  <p class="sub">来自 2026-11-10 总复习课。考前目标：能不翻书默写这份框架。</p>
+  <div class="card">${MIDTERM_OUTLINE}</div>
+  <button class="btn" onclick="go('home')">← 回首页</button>`;
 }
 
 /* ---------- 路由 ---------- */
