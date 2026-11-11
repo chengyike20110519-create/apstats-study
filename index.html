@@ -39,6 +39,12 @@ h1{font-size:20px;margin-bottom:4px;}
 .pbar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:8px 0 16px;}
 .pbar>div{height:100%;background:var(--blue);}
 select,.btn.small{font-size:13px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;}
+.acct{position:relative;}
+.acct summary{list-style:none;cursor:pointer;font-size:13px;color:var(--muted);padding:6px 10px;border:1px solid var(--line);border-radius:8px;white-space:nowrap;}
+.acct summary::-webkit-details-marker{display:none;}
+.acct-menu{position:absolute;right:0;top:38px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.08);display:flex;flex-direction:column;min-width:130px;z-index:30;}
+.acct-menu button{border:none;background:none;padding:10px 14px;text-align:left;font-size:14px;cursor:pointer;}
+.acct-menu button:hover{background:#f9fafb;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
 .stat{font-size:13px;color:var(--muted);}
 .stat b{font-size:22px;color:var(--text);display:block;}
@@ -63,10 +69,11 @@ input[type=range]{width:100%;}
   <button class="tab" data-view="fr">简答题</button>
   <button class="tab" data-view="wrong">错题本</button>
   <button class="tab" data-view="knowledge">知识点</button>
+  <span id="acct" style="margin-left:auto"></span>
 </nav></header>
 <main id="app"></main>
-<script src="js/questions.js?v=8"></script>
-<script src="js/knowledge.js?v=8"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/questions.js?v=9"></script>
+<script src="js/knowledge.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>

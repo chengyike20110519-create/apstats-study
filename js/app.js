@@ -3,9 +3,26 @@ const LS = {
   get(k, d) { try { return JSON.parse(localStorage.getItem("apstat_" + k)) ?? d; } catch { return d; } },
   set(k, v) { localStorage.setItem("apstat_" + k, JSON.stringify(v)); }
 };
-// state: {mc: {qid: {pick, correct, ts}}, frDone: {qid:true}, learned: {ch:true}}
-let progress = LS.get("progress", { mc: {}, frDone: {}, learned: {} });
-const saveProgress = () => LS.set("progress", progress);
+
+/* ---------- 多账号：每个账号做题进度/错题本独立 ---------- */
+let accounts = LS.get("accounts", []);          // [{name, pin}]
+let current = LS.get("current", null);         // 当前账号名
+const accKey = n => "data_" + n;
+const loadProgress = n => LS.get(accKey(n), { mc: {}, frDone: {}, learned: {} });
+let progress = { mc: {}, frDone: {}, learned: {} };
+const saveProgress = () => { if (current) LS.set(accKey(current), progress); };
+
+// 首次启动：把旧版单一进度迁移为「我的」账号
+if (!accounts.length) {
+  const legacy = LS.get("progress", null);
+  accounts = [{ name: "我的", pin: "" }];
+  LS.set("accounts", accounts);
+  current = "我的";
+  if (legacy && legacy.mc && Object.keys(legacy.mc).length) LS.set(accKey("我的"), legacy);
+  LS.set("current", current);
+}
+if (!current || !accounts.some(a => a.name === current)) current = null;
+if (current) { LS.set("current", current); progress = loadProgress(current); }
 
 // 知识点章节 → 刷题小节（学完一章立即刷对应题）
 const CH_TOPICS = {
@@ -290,10 +307,150 @@ function showOutline() {
 
 /* ---------- 路由 ---------- */
 function go(view, arg) {
+  if (!current) { viewPicker(); return; }
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
   if (view === "practice") renderPractice();
   else ({ home: viewHome, fr: viewFR, wrong: viewWrong, knowledge: viewKnowledge })[view](arg);
   window.scrollTo(0, 0);
 }
+
+/* ---------- 账号管理 ---------- */
+function renderAcctChip() {
+  const el = document.getElementById("acct");
+  if (!el) return;
+  el.innerHTML = !current ? "" : `<details class="acct"><summary>👤 ${esc(current)}</summary><div class="acct-menu">
+    <button onclick="viewPicker()">切换账号</button>
+    <button onclick="viewCreate()">＋ 新建账号</button>
+    <button onclick="viewExport()">导出备份码</button>
+    <button onclick="viewImport()">导入备份码</button>
+    <button style="color:var(--red)" onclick="viewDelete()">删除此账号</button>
+  </div></details>`;
+}
+function viewPicker(msg) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".acct").forEach(d => d.removeAttribute("open"));
+  let html = `<h1>选择账号</h1><p class="sub">每个账号的做题记录、错题本、已学章节完全独立${msg ? " · <b style='color:var(--red)'>" + esc(msg) + "</b>" : ""}</p>`;
+  for (const a of accounts) {
+    const d = Object.keys(loadProgress(a.name).mc).length;
+    html += `<div class="card" style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:15px"><b>${esc(a.name)}</b> <span class="stat">已做 ${d} 题${a.pin ? " · 🔒 已设PIN" : ""}</span></span>
+      <button class="btn primary" onclick="login('${esc(a.name)}')">进入</button></div>`;
+  }
+  html += `<button class="btn primary" onclick="viewCreate()">＋ 给朋友新建账号</button>`;
+  app.innerHTML = html;
+}
+function login(name) {
+  const a = accounts.find(x => x.name === name);
+  if (a && a.pin) viewLogin(name); else doSwitch(name);
+}
+function viewLogin(name) {
+  app.innerHTML = `<h1>进入「${esc(name)}」</h1>
+  <div class="card"><p style="font-size:14px;margin-bottom:8px">输入 PIN 码</p>
+  <input id="lg_pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"
+    style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:18px;letter-spacing:6px"
+    onkeydown="if(event.key==='Enter')submitPin('${esc(name)}')">
+  <div id="lg_err" style="color:var(--red);font-size:13px;margin-top:6px"></div>
+  <div style="margin-top:12px;display:flex;gap:8px">
+    <button class="btn primary" onclick="submitPin('${esc(name)}')">进入</button>
+    <button class="btn" onclick="viewPicker()">返回</button>
+  </div></div>`;
+  setTimeout(() => document.getElementById("lg_pin")?.focus(), 60);
+}
+function submitPin(name) {
+  const a = accounts.find(x => x.name === name);
+  if (document.getElementById("lg_pin").value === a.pin) doSwitch(name);
+  else document.getElementById("lg_err").textContent = "PIN 不对，再试试";
+}
+function doSwitch(name) {
+  current = name; LS.set("current", current);
+  progress = loadProgress(current);
+  session = null;
+  renderAcctChip();
+  go("home");
+}
+function viewCreate() {
+  app.innerHTML = `<h1>新建账号</h1>
+  <div class="card">
+    <p style="font-size:14px;margin-bottom:6px">账号名（谁用就写谁的名字）</p>
+    <input id="nc_name" maxlength="12" placeholder="例如：小明"
+      style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:15px">
+    <p style="font-size:14px;margin:14px 0 6px">PIN 码（可选，4 位数字；切换进这个账号时要输入）</p>
+    <input id="nc_pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"
+      style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:18px;letter-spacing:6px">
+    <div id="nc_err" style="color:var(--red);font-size:13px;margin-top:6px"></div>
+    <p style="font-size:13px;color:var(--muted);margin-top:8px">PIN 只是防止朋友间误进对方账号，不是加密保护；忘了 PIN 可以删号重建。</p>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn primary" onclick="createAccount()">创建并进入</button>
+      <button class="btn" onclick="viewPicker()">取消</button>
+    </div>
+  </div>`;
+  setTimeout(() => document.getElementById("nc_name")?.focus(), 60);
+}
+function createAccount() {
+  const name = document.getElementById("nc_name").value.trim();
+  const pin = document.getElementById("nc_pin").value.trim();
+  if (!name) { document.getElementById("nc_err").textContent = "请输入账号名"; return; }
+  if (accounts.some(a => a.name === name)) { document.getElementById("nc_err").textContent = "这个账号名已经存在"; return; }
+  if (pin && !/^\d{4}$/.test(pin)) { document.getElementById("nc_err").textContent = "PIN 需为 4 位数字"; return; }
+  accounts.push({ name, pin });
+  LS.set("accounts", accounts);
+  doSwitch(name);
+}
+function viewExport() {
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, name: current, data: progress }))));
+  app.innerHTML = `<h1>导出备份码</h1>
+  <p class="sub">「${esc(current)}」的全部进度（做题记录/错题本/已学章节）。复制这串文字保存，或在另一台设备上「导入备份码」即可迁移。</p>
+  <textarea id="ex_code" readonly style="width:100%;height:150px;font-size:12px;padding:10px;border:1px solid var(--line);border-radius:8px;word-break:break-all">${code}</textarea>
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <button class="btn primary" onclick="copyExport()">复制备份码</button>
+    <button class="btn" onclick="go('home')">返回</button>
+  </div>`;
+}
+function copyExport() {
+  const ta = document.getElementById("ex_code");
+  ta.select();
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(ta.value);
+  document.execCommand("copy");
+}
+function viewImport() {
+  app.innerHTML = `<h1>导入备份码</h1>
+  <div class="card">
+    <p style="font-size:14px;margin-bottom:6px">粘贴备份码（将恢复为该账号的进度，同名账号直接覆盖）</p>
+    <textarea id="im_code" style="width:100%;height:120px;font-size:12px;padding:10px;border:1px solid var(--line);border-radius:8px"></textarea>
+    <div id="im_err" style="color:var(--red);font-size:13px;margin-top:6px"></div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn primary" onclick="importCode()">导入</button>
+      <button class="btn" onclick="viewPicker()">返回</button>
+    </div>
+  </div>`;
+}
+function importCode() {
+  try {
+    const obj = JSON.parse(decodeURIComponent(escape(atob(document.getElementById("im_code").value.trim()))));
+    if (!obj || obj.v !== 1 || !obj.name || !obj.data || !obj.data.mc) throw 0;
+    if (!accounts.some(a => a.name === obj.name)) { accounts.push({ name: obj.name, pin: "" }); LS.set("accounts", accounts); }
+    LS.set(accKey(obj.name), obj.data);
+    doSwitch(obj.name);
+  } catch { document.getElementById("im_err").textContent = "备份码无效，请检查是否完整"; }
+}
+function viewDelete() {
+  app.innerHTML = `<h1>删除账号「${esc(current)}」</h1>
+  <div class="card"><p style="font-size:14px">将删除本机上「${esc(current)}」的全部做题记录、错题本、已学章节，<b>无法恢复</b>（不影响其他设备上的备份）。</p>
+  <div style="margin-top:12px;display:flex;gap:8px">
+    <button class="btn" style="color:var(--red);border-color:var(--red)" onclick="doDelete()">确认删除</button>
+    <button class="btn" onclick="go('home')">取消</button>
+  </div></div>`;
+}
+function doDelete() {
+  const name = current;
+  accounts = accounts.filter(a => a.name !== name);
+  LS.set("accounts", accounts);
+  localStorage.removeItem("apstat_" + accKey(name));
+  current = null; LS.set("current", null);
+  progress = null; session = null;
+  renderAcctChip();
+  viewPicker("已删除「" + name + "」");
+}
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => go(t.dataset.view));
-viewHome();
+renderAcctChip();
+if (current) viewHome(); else viewPicker();
